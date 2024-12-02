@@ -1,131 +1,58 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-import logging
 
 from core.database import get_db
-from core.auth import get_current_user
+from core.decorators import require_auth
 from core.models import User
-from .models import (
-    DiscordIntegrationCreate,
-    DiscordIntegrationUpdate,
-    DiscordIntegrationResponse,
-    WebhookConfig,
-    NotificationConfig
+
+from .schemas import (
+    DiscordIntegrationCreate, 
+    DiscordIntegrationResponse, 
+    DiscordIntegrationUpdate
 )
 from .service import DiscordService
 
-# Configure logging
-logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/api/discord", tags=["discord"])
 
-@router.post("/", response_model=DiscordIntegrationResponse)
+@router.post("", response_model=DiscordIntegrationResponse)
+@require_auth
 async def create_discord_integration(
-    integration: DiscordIntegrationCreate,
+    discord_integration: DiscordIntegrationCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = None
 ):
-    """Create a new Discord integration."""
-    logger.info(f"CREATE DISCORD INTEGRATION ROUTE CALLED by user {current_user.email}")
-    logger.debug(f"Integration details: {integration}")
-    
-    # Create integration
-    db_integration = await DiscordService.create_integration(db, integration, current_user)
-    
-    # Convert to response model
-    return DiscordIntegrationResponse(
-        id=db_integration.id,
-        user_id=db_integration.user_id,
-        webhook=WebhookConfig(
-            url=db_integration.webhook_url,
-            username=db_integration.webhook_username,
-            avatar_url=db_integration.webhook_avatar_url
-        ),
-        notifications=NotificationConfig(
-            order_created=db_integration.notify_order_created,
-            order_updated=db_integration.notify_order_updated,
-            order_completed=db_integration.notify_order_completed,
-            order_failed=db_integration.notify_order_failed
-        ),
-        is_active=True
-    )
+    """Create a Discord integration for the current user."""
+    service = DiscordService(db)
+    return await service.create_integration(current_user.id, discord_integration)
 
-@router.get("/", response_model=DiscordIntegrationResponse)
+@router.get("", response_model=DiscordIntegrationResponse)
+@require_auth
 async def get_discord_integration(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = None
 ):
-    """Get Discord integration for the current user."""
-    logger.info(f"GET DISCORD INTEGRATION ROUTE CALLED by user {current_user.email}")
-    
-    # Get integration
-    db_integration = await DiscordService.get_integration(db, current_user)
-    
-    # Check if integration exists
-    if not db_integration:
-        logger.warning(f"No Discord integration found for user {current_user.email}")
-        raise HTTPException(
-            status_code=404,
-            detail="Discord integration not found"
-        )
-    
-    # Convert to response model
-    return DiscordIntegrationResponse(
-        id=db_integration.id,
-        user_id=db_integration.user_id,
-        webhook=WebhookConfig(
-            url=db_integration.webhook_url,
-            username=db_integration.webhook_username,
-            avatar_url=db_integration.webhook_avatar_url
-        ),
-        notifications=NotificationConfig(
-            order_created=db_integration.notify_order_created,
-            order_updated=db_integration.notify_order_updated,
-            order_completed=db_integration.notify_order_completed,
-            order_failed=db_integration.notify_order_failed
-        ),
-        is_active=True
-    )
+    """Retrieve the Discord integration for the current user."""
+    service = DiscordService(db)
+    return await service.get_integration(current_user.id)
 
-@router.put("/", response_model=DiscordIntegrationResponse)
+@router.put("", response_model=DiscordIntegrationResponse)
+@require_auth
 async def update_discord_integration(
-    integration: DiscordIntegrationUpdate,
+    discord_integration: DiscordIntegrationUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = None
 ):
-    """Update Discord integration settings."""
-    logger.info(f"UPDATE DISCORD INTEGRATION ROUTE CALLED by user {current_user.email}")
-    logger.debug(f"Update details: {integration}")
-    
-    # Update integration
-    db_integration = await DiscordService.update_integration(db, integration, current_user)
-    
-    # Convert to response model
-    return DiscordIntegrationResponse(
-        id=db_integration.id,
-        user_id=db_integration.user_id,
-        webhook=WebhookConfig(
-            url=db_integration.webhook_url,
-            username=db_integration.webhook_username,
-            avatar_url=db_integration.webhook_avatar_url
-        ),
-        notifications=NotificationConfig(
-            order_created=db_integration.notify_order_created,
-            order_updated=db_integration.notify_order_updated,
-            order_completed=db_integration.notify_order_completed,
-            order_failed=db_integration.notify_order_failed
-        ),
-        is_active=True
-    )
+    """Update the Discord integration for the current user."""
+    service = DiscordService(db)
+    return await service.update_integration(current_user.id, discord_integration)
 
-@router.delete("/")
+@router.delete("")
+@require_auth
 async def delete_discord_integration(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = None
 ):
-    """Delete Discord integration."""
-    logger.info(f"DELETE DISCORD INTEGRATION ROUTE CALLED by user {current_user.email}")
-    success = await DiscordService.delete_integration(db, current_user)
-    if success:
-        return {"message": "Discord integration deleted successfully"}
-    raise HTTPException(status_code=404, detail="Discord integration not found")
+    """Delete the Discord integration for the current user."""
+    service = DiscordService(db)
+    await service.delete_integration(current_user.id)
+    return {"message": "Discord integration deleted successfully"}

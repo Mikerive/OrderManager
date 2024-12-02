@@ -14,9 +14,11 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
 from fastapi import Depends
 
-from core.database import Base
+from core.database.database import Base
 from core.auth import get_password_hash, create_access_token, get_current_user
-from core.models import User, Order, DiscordIntegration
+from core.user.models import User
+from core.orders.models import Order
+from features.discord_integration.models import DiscordIntegration
 
 # Configure logging
 logging.basicConfig(

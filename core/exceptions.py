@@ -50,3 +50,36 @@ class ConflictException(OrderChainerException):
             status_code=status.HTTP_409_CONFLICT,
             detail=detail
         )
+
+class UserNotFoundError(NotFoundException):
+    """User not found exception."""
+    def __init__(self, user_id: int = None, email: str = None):
+        detail = "User not found"
+        if user_id:
+            detail = f"User with ID {user_id} not found"
+        elif email:
+            detail = f"User with email {email} not found"
+        super().__init__(detail=detail)
+
+class DuplicateUserError(ConflictException):
+    """Duplicate user exception."""
+    def __init__(self, email: str = None, username: str = None):
+        detail = "User already exists"
+        if email:
+            detail = f"User with email {email} already exists"
+        elif username:
+            detail = f"User with username {username} already exists"
+        super().__init__(detail=detail)
+
+class OrderNotFoundError(NotFoundException):
+    """Order not found exception."""
+    def __init__(self, order_id: int):
+        super().__init__(detail=f"Order with ID {order_id} not found")
+
+class UnauthorizedError(UnauthorizedException):
+    """Unauthorized access to order exception."""
+    def __init__(self, user_id: int = None):
+        detail = "Not authorized to access this order"
+        if user_id:
+            detail = f"User {user_id} is not authorized to access this order"
+        super().__init__(detail=detail)

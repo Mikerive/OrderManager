@@ -4,9 +4,9 @@ from sqlalchemy.exc import IntegrityError
 from fastapi import HTTPException
 from datetime import datetime
 
-from core.database import get_db
-from core.models import Order, User
-from .models import OrderCreate, OrderUpdate
+from core.database.database import get_db
+from core.user.models import User
+from .models import Order, OrderCreate, OrderUpdate
 
 class OrderService:
     """Service class for handling order-related operations."""

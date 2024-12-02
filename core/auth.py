@@ -7,8 +7,8 @@ from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from .config import settings
-from .database import get_db
-from .models import User
+from core.database.database import get_db
+from core.user.models import User
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -58,13 +58,22 @@ async def get_current_user(
             settings.SECRET_KEY,
             algorithms=[settings.ALGORITHM]
         )
-        email: str = payload.get("sub")
-        if email is None:
+        # Try to get email or user ID
+        email_or_id = payload.get("sub")
+        if email_or_id is None:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
     
-    user = db.query(User).filter(User.email == email).first()
+    # Try to find user by email or ID
+    user = (
+        db.query(User)
+        .filter(
+            (User.email == email_or_id) | (User.id == int(email_or_id))
+        )
+        .first()
+    )
+    
     if user is None:
         raise credentials_exception
     
