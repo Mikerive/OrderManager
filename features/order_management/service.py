@@ -5,7 +5,8 @@ from sqlalchemy import or_
 from core.orders.models import Order as BaseOrder, OrderCreate, OrderUpdate
 from core.orders.service import OrderService as BaseOrderService
 from core.user.models import User
-from .models import ManagedOrder, ManagedOrderDB, OrderStatus, OrderPriority
+from core.orders.events import OrderEventDispatcher, OrderEvent, OrderEventType
+from .models import ManagedOrder, ManagedOrderDB, OrderStatus, OrderPriority, ExchangeType
 from core.exceptions import OrderNotFoundError, UnauthorizedError
 from fastapi import HTTPException
 
@@ -30,7 +31,15 @@ class OrderService:
             tags=",".join(order_data.get("tags", [])),
             estimated_hours=order_data.get("estimated_hours"),
             notes=order_data.get("notes"),
-            dependencies=order_data.get("dependencies", [])
+            dependencies=order_data.get("dependencies", []),
+            chain_id=order_data.get("chain_id"),
+            chain_type=order_data.get("chain_type"),
+            chain_sequence=order_data.get("chain_sequence"),
+            parent_order_id=order_data.get("parent_order_id"),
+            chain_status=order_data.get("chain_status"),
+            chain_metadata=order_data.get("chain_metadata", {}),
+            exchange_type=order_data.get("exchange_type", ExchangeType.PAPER),
+            exchange_config=order_data.get("exchange_config", {})
         )
 
         # Add to database
@@ -38,8 +47,138 @@ class OrderService:
         db.commit()
         db.refresh(managed_order)
 
+        # Prepare event data with exchange information
+        event_data = {
+            **order_data,
+            "exchange_type": managed_order.exchange_type,
+            "exchange_config": managed_order.exchange_config
+        }
+
+        # Dispatch order created event
+        event = OrderEvent(
+            event_type=OrderEventType.CREATED,
+            order_id=managed_order.id,
+            timestamp=datetime.utcnow(),
+            data=event_data,
+            chain_id=managed_order.chain_id,
+            chain_type=managed_order.chain_type
+        )
+        OrderEventDispatcher.dispatch_event(event)
+
         # Convert to Pydantic model and return
         return ManagedOrder.model_validate(managed_order)
+
+    @staticmethod
+    async def create_order_chain(db: Session, user_id: int, chain_data: List[dict], chain_type: str, exchange_type: ExchangeType = ExchangeType.PAPER, exchange_config: Optional[dict] = None) -> List[ManagedOrder]:
+        """Create a chain of related orders."""
+        import uuid
+        
+        chain_id = str(uuid.uuid4())
+        orders = []
+        
+        # Add exchange information to chain metadata
+        chain_metadata = {
+            "exchange_type": exchange_type,
+            "exchange_config": exchange_config or {}
+        }
+        
+        # Dispatch chain started event
+        start_event = OrderEvent(
+            event_type=OrderEventType.CHAIN_STARTED,
+            order_id=0,
+            timestamp=datetime.utcnow(),
+            data={
+                "chain_type": chain_type,
+                **chain_metadata
+            },
+            chain_id=chain_id,
+            chain_type=chain_type
+        )
+        OrderEventDispatcher.dispatch_event(start_event)
+        
+        try:
+            for sequence, order_data in enumerate(chain_data):
+                # Add chain and exchange information to each order
+                order_data.update({
+                    "chain_id": chain_id,
+                    "chain_type": chain_type,
+                    "chain_sequence": sequence,
+                    "exchange_type": exchange_type,
+                    "exchange_config": exchange_config
+                })
+                
+                if sequence > 0:
+                    order_data["parent_order_id"] = orders[-1].id
+                
+                # Create the order
+                order = await OrderService.create_order(db, user_id, order_data)
+                orders.append(order)
+            
+            # Dispatch chain completed event
+            complete_event = OrderEvent(
+                event_type=OrderEventType.CHAIN_COMPLETED,
+                order_id=orders[-1].id,
+                timestamp=datetime.utcnow(),
+                data={
+                    "orders": [order.id for order in orders],
+                    **chain_metadata
+                },
+                chain_id=chain_id,
+                chain_type=chain_type
+            )
+            OrderEventDispatcher.dispatch_event(complete_event)
+            
+        except Exception as e:
+            # Dispatch chain failed event
+            fail_event = OrderEvent(
+                event_type=OrderEventType.CHAIN_FAILED,
+                order_id=orders[-1].id if orders else 0,
+                timestamp=datetime.utcnow(),
+                data={
+                    "error": str(e),
+                    **chain_metadata
+                },
+                chain_id=chain_id,
+                chain_type=chain_type
+            )
+            OrderEventDispatcher.dispatch_event(fail_event)
+            raise
+        
+        return orders
+
+    @staticmethod
+    async def get_chain_orders(db: Session, chain_id: str, user_id: int) -> List[ManagedOrder]:
+        """Get all orders in a specific chain."""
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise UnauthorizedError()
+
+        orders = db.query(ManagedOrderDB).filter(
+            ManagedOrderDB.chain_id == chain_id,
+            ManagedOrderDB.owner_id == user_id
+        ).order_by(ManagedOrderDB.chain_sequence).all()
+
+        return [ManagedOrder.model_validate(order) for order in orders]
+
+    @staticmethod
+    async def update_chain_status(db: Session, chain_id: str, user_id: int, status: str, error: Optional[str] = None) -> List[ManagedOrder]:
+        """Update the status of all orders in a chain."""
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise UnauthorizedError()
+
+        orders = db.query(ManagedOrderDB).filter(
+            ManagedOrderDB.chain_id == chain_id,
+            ManagedOrderDB.owner_id == user_id
+        ).all()
+
+        for order in orders:
+            order.chain_status = status
+            if error:
+                order.chain_error = error
+
+        db.commit()
+        return [ManagedOrder.model_validate(order) for order in orders]
 
     @staticmethod
     async def get_order(db: Session, order_id: int, user_id: int) -> ManagedOrder:

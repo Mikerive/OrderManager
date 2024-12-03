@@ -18,9 +18,6 @@ class User(Base):
         is_superuser (bool): Indicates if user has admin privileges
         created_at (DateTime): Timestamp of user creation
         updated_at (DateTime): Timestamp of last user update
-
-        Relationships:
-        - discord_integrations: List of Discord integrations associated with the user
     """
 
     __tablename__ = "users"
@@ -34,11 +31,6 @@ class User(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-
-    # Relationships
-    discord_integrations = relationship(
-        "DiscordIntegration", back_populates="user", cascade="all, delete-orphan"
-    )
 
     def __repr__(self):
         """String representation of the User model."""

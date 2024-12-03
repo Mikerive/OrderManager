@@ -19,6 +19,7 @@ __pycache__/
 
 # Environment variables
 .env
+features/alpaca/.env
 
 # Compiled files
 *.pyc

@@ -51,6 +51,14 @@ class ConflictException(OrderChainerException):
             detail=detail
         )
 
+class ValidationException(OrderChainerException):
+    """Validation error exception."""
+    def __init__(self, detail: str):
+        super().__init__(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=detail
+        )
+
 class UserNotFoundError(NotFoundException):
     """User not found exception."""
     def __init__(self, user_id: int = None, email: str = None):
